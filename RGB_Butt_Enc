@@ -1,0 +1,104 @@
+import RPi.GPIO as GPIO
+import time
+
+# Pin definitions
+RED_PIN = 17
+GREEN_PIN = 27
+BLUE_PIN = 22
+BUTTON_PIN = 18
+ENCODER_A_PIN = 23  # CLK
+ENCODER_B_PIN = 24  # DT
+
+# Setup GPIO mode
+GPIO.setmode(GPIO.BCM)
+
+# Setup LED pins as outputs with PWM
+GPIO.setup(RED_PIN, GPIO.OUT)
+GPIO.setup(GREEN_PIN, GPIO.OUT)
+GPIO.setup(BLUE_PIN, GPIO.OUT)
+
+# PWM setup for LED pins (frequency 1000 Hz)
+red_pwm = GPIO.PWM(RED_PIN, 1000)
+green_pwm = GPIO.PWM(GREEN_PIN, 1000)
+blue_pwm = GPIO.PWM(BLUE_PIN, 1000)
+
+# Start PWM with 0% duty cycle (off)
+red_pwm.start(0)
+green_pwm.start(0)
+blue_pwm.start(0)
+
+# Setup button pin as input with pull-up resistor
+GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+# Setup encoder pins with pull-up resistors
+GPIO.setup(ENCODER_A_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(ENCODER_B_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+# Initial color and brightness
+color_index = 0
+brightness = 20  # Start at 20% brightness
+
+# Last encoder state (for debouncing)
+last_state_A = GPIO.input(ENCODER_A_PIN)
+
+# Function to turn off all LEDs
+def turn_off_led():
+    red_pwm.ChangeDutyCycle(0)
+    green_pwm.ChangeDutyCycle(0)
+    blue_pwm.ChangeDutyCycle(0)
+
+# Function to set PWM color based on color index and brightness
+def set_color_pwm(index, brightness):
+    turn_off_led()
+    if index == 0:
+        red_pwm.ChangeDutyCycle(brightness)
+    elif index == 1:
+        green_pwm.ChangeDutyCycle(brightness)
+    elif index == 2:
+        blue_pwm.ChangeDutyCycle(brightness)
+
+# Encoder callback function
+def encoder_callback():
+    global brightness
+    current_state_A = GPIO.input(ENCODER_A_PIN)
+    current_state_B = GPIO.input(ENCODER_B_PIN)
+
+    # XOR between A and B channels to detect direction
+    if current_state_A != last_state_A:
+        if current_state_A != current_state_B:  # Clockwise
+            brightness = min(100, brightness + 1)  # Increase brightness by 1%
+        else:  # Counter-clockwise
+            brightness = max(0, brightness - 1)  # Decrease brightness by 1%
+        
+        # Update the color with new brightness
+        set_color_pwm(color_index, brightness)
+
+# Detect encoder rotation on both A and B channels
+def check_encoder():
+    global last_state_A
+    current_state_A = GPIO.input(ENCODER_A_PIN)
+    if current_state_A != last_state_A:
+        encoder_callback()
+        last_state_A = current_state_A
+
+# Main loop
+try:
+    while True:
+        # Check if button is pressed (active-low)
+        if GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            time.sleep(0.2)  # Debounce delay
+            color_index = (color_index + 1) % 3  # Cycle through colors
+            set_color_pwm(color_index, brightness)
+        
+        # Continuously check the encoder state
+        check_encoder()
+        time.sleep(0.05)  # Decreased to improve responsiveness
+
+except KeyboardInterrupt:
+    pass
+
+finally:
+    red_pwm.stop()
+    green_pwm.stop()
+    blue_pwm.stop()
+    GPIO.cleanup()  # Cleanup GPIO on exit
